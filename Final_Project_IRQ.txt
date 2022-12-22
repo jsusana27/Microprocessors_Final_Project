@@ -1,0 +1,423 @@
+              XDEF      IRQ_ISR
+              XREF      SendsChr, PlayTone, RTIFLG, flashing_flag, Port_S, keypad, first_pw, second_pw, third_pw, fourth_pw, correct_first, correct_second, correct_third, correct_fourth, display_string, accumulator_b, disp, char1_flag, char2_flag, char3_flag, char4_flag, Port_T
+
+IRQ_ISR:      bclr      Port_T, %1000
+              ldaa      char4_flag
+              cmpa      #1
+              beq       check_pass2
+              ldaa      char3_flag
+              cmpa      #1
+              beq       third_done2
+              ldaa      char2_flag
+              cmpa      #1
+              beq       second_done2
+              ldaa      char1_flag
+              cmpa      #1
+              beq       first_done2
+              bra       none_done
+              
+first_done2:  lbra      first_done1
+
+second_done2: lbra      second_done1
+
+third_done2:  lbra      third_done1
+
+check_pass2:  lbra      check_pass
+              
+none_done:    movb      #'E',disp
+              movb      #'n',disp+1
+              movb      #'t',disp+2
+              movb      #'e',disp+3
+              movb      #'r',disp+4
+              movb      #' ',disp+5
+              movb      #'p',disp+6
+              movb      #'a',disp+7
+              movb      #'s',disp+8
+              movb      #'s',disp+9
+              movb      #'w',disp+10
+              movb      #'o',disp+11
+              movb      #'r',disp+12
+              movb      #'d',disp+13
+              movb      #':',disp+14
+              movb      #' ',disp+15
+              movb      #' ',disp+16
+              movb      #' ',disp+17
+              movb      #' ',disp+18
+              movb      #' ',disp+19
+              movb      #' ',disp+20
+              movb      #' ',disp+21
+              movb      #' ',disp+22
+              movb      #' ',disp+23
+              movb      #' ',disp+24
+              movb      #' ',disp+25
+              movb      #' ',disp+26
+              movb      #' ',disp+27
+              movb      #' ',disp+28
+              movb      #' ',disp+29
+              movb      #' ',disp+30
+              movb      #' ',disp+31
+              movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+              ldd       #disp
+              jsr       display_string
+              ldaa      flashing_flag
+              cmpa      #1
+              beq       loop1
+              bra       loop2
+                  
+
+loop1:        bclr      Port_S, #%11111111            ;Clear all LED's
+
+              ldaa      #5
+              psha                                    ;Speaker stuff
+              ldd       #0
+              jsr       SendsChr
+              jsr       PlayTone
+              leas      1, SP
+              
+              ldaa      #0
+              staa      flashing_flag
+              
+              jsr       keypad
+              ldaa      accumulator_b
+              cmpa      #20
+              beq       delay4
+              
+              
+              staa      first_pw
+              ldaa      #1
+              staa      char1_flag
+              lbra      IRQ_ISR
+             
+delay4:       lbra      IRQ_ISR
+              
+loop2:        bset      Port_S, #%11111111            ;Clear all LED's
+
+              ldaa      #5
+              psha                                    ;Speaker stuff
+              ldd       #0
+              jsr       SendsChr
+              jsr       PlayTone
+              leas      1, SP
+              
+              ldaa      #1  
+              staa      flashing_flag
+              
+              jsr       keypad
+              ldaa      accumulator_b
+              cmpa      #20
+              beq       delay3
+              
+              staa      first_pw
+              ldaa      #1
+              staa      char1_flag
+              lbra      IRQ_ISR
+    
+delay3:       lbra      IRQ_ISR
+              
+first_done1:  movb      #'E',disp
+              movb      #'n',disp+1
+              movb      #'t',disp+2
+              movb      #'e',disp+3
+              movb      #'r',disp+4
+              movb      #' ',disp+5
+              movb      #'p',disp+6
+              movb      #'a',disp+7
+              movb      #'s',disp+8
+              movb      #'s',disp+9
+              movb      #'w',disp+10
+              movb      #'o',disp+11
+              movb      #'r',disp+12
+              movb      #'d',disp+13
+              movb      #':',disp+14
+              movb      #' ',disp+15
+              movb      #'*',disp+16
+              movb      #' ',disp+17
+              movb      #' ',disp+18
+              movb      #' ',disp+19
+              movb      #' ',disp+20
+              movb      #' ',disp+21
+              movb      #' ',disp+22
+              movb      #' ',disp+23
+              movb      #' ',disp+24
+              movb      #' ',disp+25
+              movb      #' ',disp+26
+              movb      #' ',disp+27
+              movb      #' ',disp+28
+              movb      #' ',disp+29
+              movb      #' ',disp+30
+              movb      #' ',disp+31
+              movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+              ldd       #disp
+              jsr       display_string
+              ldaa      flashing_flag
+              cmpa      #1
+              beq       loop3
+              bra       loop4
+              
+loop3:        bclr      Port_S, #%11111111            ;Clear all LED's
+
+              ldaa      #5
+              psha                                    ;Speaker stuff
+              ldd       #0
+              jsr       SendsChr
+              jsr       PlayTone
+              leas      1, SP
+              
+              ldaa      #0
+              staa      flashing_flag
+              
+              jsr       keypad
+              ldaa      accumulator_b
+              cmpa      #20
+              beq       delay5
+              
+              staa      second_pw
+              ldaa      #1
+              staa      char2_flag
+              lbra      IRQ_ISR
+              
+delay5:       lbra      IRQ_ISR
+              
+loop4:        bset      Port_S, #%11111111            ;Clear all LED's
+
+              ldaa      #5
+              psha                                    ;Speaker stuff
+              ldd       #0
+              jsr       SendsChr
+              jsr       PlayTone
+              leas      1, SP
+              
+              ldaa      #1  
+              staa      flashing_flag
+              
+              jsr       keypad
+              ldaa      accumulator_b
+              cmpa      #20
+              beq       delay6
+              
+              staa      second_pw
+              ldaa      #1
+              staa      char2_flag
+              lbra      IRQ_ISR
+              
+delay6:       lbra      IRQ_ISR
+              
+second_done1: movb      #'E',disp
+              movb      #'n',disp+1
+              movb      #'t',disp+2
+              movb      #'e',disp+3
+              movb      #'r',disp+4
+              movb      #' ',disp+5
+              movb      #'p',disp+6
+              movb      #'a',disp+7
+              movb      #'s',disp+8
+              movb      #'s',disp+9
+              movb      #'w',disp+10
+              movb      #'o',disp+11
+              movb      #'r',disp+12
+              movb      #'d',disp+13
+              movb      #':',disp+14
+              movb      #' ',disp+15
+              movb      #'*',disp+16
+              movb      #'*',disp+17
+              movb      #' ',disp+18
+              movb      #' ',disp+19
+              movb      #' ',disp+20
+              movb      #' ',disp+21
+              movb      #' ',disp+22
+              movb      #' ',disp+23
+              movb      #' ',disp+24
+              movb      #' ',disp+25
+              movb      #' ',disp+26
+              movb      #' ',disp+27
+              movb      #' ',disp+28
+              movb      #' ',disp+29
+              movb      #' ',disp+30
+              movb      #' ',disp+31
+              movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+              ldd       #disp
+              jsr       display_string
+              ldaa      flashing_flag
+              cmpa      #1
+              beq       loop5
+              lbra      loop6
+              
+loop5:        bclr      Port_S, #%11111111            ;Clear all LED's
+
+              ldaa      #5
+              psha                                    ;Speaker stuff
+              ldd       #0
+              jsr       SendsChr
+              jsr       PlayTone
+              leas      1, SP
+              
+              ldaa      #0
+              staa      flashing_flag
+              
+              jsr       keypad
+              ldaa      accumulator_b
+              cmpa      #20
+              beq       delay7
+              
+              staa      third_pw
+              ldaa      #1
+              staa      char3_flag
+              lbra      IRQ_ISR
+              
+delay7:       lbra      IRQ_ISR
+              
+loop6:        bset      Port_S, #%11111111            ;Clear all LED's
+
+              ldaa      #5
+              psha                                    ;Speaker stuff
+              ldd       #0
+              jsr       SendsChr
+              jsr       PlayTone
+              leas      1, SP
+              
+              ldaa      #1  
+              staa      flashing_flag
+              
+              jsr       keypad
+              ldaa      accumulator_b
+              cmpa      #20
+              beq       delay8
+              
+              staa      third_pw
+              ldaa      #1
+              staa      char3_flag
+              lbra      IRQ_ISR
+              
+delay8:       lbra      IRQ_ISR
+              
+third_done1:  movb      #'E',disp
+              movb      #'n',disp+1
+              movb      #'t',disp+2
+              movb      #'e',disp+3
+              movb      #'r',disp+4
+              movb      #' ',disp+5
+              movb      #'p',disp+6
+              movb      #'a',disp+7
+              movb      #'s',disp+8
+              movb      #'s',disp+9
+              movb      #'w',disp+10
+              movb      #'o',disp+11
+              movb      #'r',disp+12
+              movb      #'d',disp+13
+              movb      #':',disp+14
+              movb      #' ',disp+15
+              movb      #'*',disp+16
+              movb      #'*',disp+17
+              movb      #'*',disp+18
+              movb      #' ',disp+19
+              movb      #' ',disp+20
+              movb      #' ',disp+21
+              movb      #' ',disp+22
+              movb      #' ',disp+23
+              movb      #' ',disp+24
+              movb      #' ',disp+25
+              movb      #' ',disp+26
+              movb      #' ',disp+27
+              movb      #' ',disp+28
+              movb      #' ',disp+29
+              movb      #' ',disp+30
+              movb      #' ',disp+31
+              movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+              ldd       #disp
+              jsr       display_string
+              ldaa      flashing_flag
+              cmpa      #1
+              beq       loop7
+              lbra      loop8
+              
+loop7:        bclr      Port_S, #%11111111            ;Clear all LED's
+
+              ldaa      #5
+              psha                                    ;Speaker stuff
+              ldd       #0
+              jsr       SendsChr
+              jsr       PlayTone
+              leas      1, SP
+              
+              ldaa      #0
+              staa      flashing_flag
+              
+              jsr       keypad
+              ldaa      accumulator_b
+              cmpa      #20
+              beq       delay9
+              
+              staa      fourth_pw
+              ldaa      #1
+              staa      char4_flag
+              lbra      IRQ_ISR
+              
+delay9:       lbra      IRQ_ISR
+              
+loop8:        bset      Port_S, #%11111111            ;Clear all LED's
+
+              ldaa      #5
+              psha                                    ;Speaker stuff
+              ldd       #0
+              jsr       SendsChr
+              jsr       PlayTone
+              leas      1, SP
+              
+              ldaa      #1  
+              staa      flashing_flag
+              
+              jsr       keypad
+              ldaa      accumulator_b
+              cmpa      #20
+              beq       delay9
+              
+              staa      fourth_pw
+              ldaa      #1
+              staa      char4_flag
+              lbra      IRQ_ISR
+              
+check_pass:   ldaa      first_pw
+              cmpa      correct_first
+              beq       next7
+              lbra      wrong_pass
+                    
+next7:        ldaa      second_pw
+              cmpa      correct_second
+              beq       next8
+              lbra      wrong_pass
+                    
+next8:        ldaa      third_pw
+              cmpa      correct_third
+              beq       next9
+              lbra      wrong_pass
+                    
+next9:        ldaa      fourth_pw
+              cmpa      correct_fourth
+              beq       correct_pass
+              lbra      wrong_pass
+              
+wrong_pass:   clr       first_pw
+              clr       second_pw
+              clr       third_pw
+              clr       fourth_pw
+              clr       char1_flag
+              clr       char2_flag
+              clr       char3_flag
+              clr       char4_flag
+              lbra      IRQ_ISR
+              
+correct_pass: clr       first_pw
+              clr       second_pw
+              clr       third_pw
+              clr       fourth_pw
+              clr       char1_flag
+              clr       char2_flag
+              clr       char3_flag
+              clr       char4_flag
+              bclr      Port_S, #%11111111
+              bra       END_RTI               
+              
+END_RTI:      bset      RTIFLG, #$80
+              rti      
+
+

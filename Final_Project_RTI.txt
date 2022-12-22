@@ -1,0 +1,228 @@
+              XDEF      RTI_ISR
+              XREF      RTIFLG, stepper_event_flag, stepper_delay_counter, SendsChr, PlayTone, IRQ_ISR, pot_value, read_pot, Port_T, acceleration_counter, iteration_counter, Port_S, sprinkler_off_flag, sprinkler_on_flag, dc_counter, my_pot_value, seconds_counter, sec_iteration_counter, ones_seconds, tens_seconds, ones_minutes, tens_minutes, ones_hours, tens_hours
+              
+RTI_ISR:            ldx       seconds_counter
+                    cpx       #3000
+                    bhs       iteration_check       
+                    inc       seconds_counter
+                    lbra      next0
+                              
+iteration_check:    clr       seconds_counter
+                    ldaa      sec_iteration_counter
+                    cmpa      #10
+                    bhs       sec_increment         
+                    inc       sec_iteration_counter
+                    lbra      next0
+                    
+sec_increment:      clr       sec_iteration_counter
+                    ldaa      ones_seconds
+                    cmpa      #57
+                    bhs       sec_10_increment        
+                    inc       ones_seconds
+                    lbra      next0
+                    
+sec_10_increment:   ldaa      #48
+                    staa      ones_seconds
+                    ldaa      tens_seconds
+                    cmpa      #53
+                    bhs       min_1_increment         
+                    inc       tens_seconds
+                    lbra      next0
+                    
+min_1_increment:    ldaa      #48
+                    staa      ones_seconds
+                    staa      tens_seconds
+                    ldaa      ones_minutes
+                    cmpa      #57
+                    bhs       min_10_increment
+                    inc       ones_minutes
+                    lbra      next0
+                    
+min_10_increment:   ldaa      #48
+                    staa      ones_seconds
+                    staa      tens_seconds
+                    staa      ones_minutes
+                    ldaa      tens_minutes
+                    cmpa      #53
+                    bhs       hour_1_increment
+                    inc       tens_minutes
+                    lbra      next0
+                    
+hour_1_increment:   ldaa      #48
+                    staa      ones_seconds
+                    staa      tens_seconds
+                    staa      ones_minutes
+                    staa      tens_minutes
+                    ldaa      tens_hours
+                    cmpa      #2
+                    beq       other_1_increment
+                    ldaa      ones_hours
+                    cmpa      #57
+                    bhs       hour_10_increment
+                    inc       ones_hours
+                    bra       next0
+                    
+hour_10_increment:  ldaa      #48
+                    staa      ones_seconds
+                    staa      tens_seconds
+                    staa      ones_minutes
+                    staa      tens_minutes
+                    staa      ones_hours
+                    ldaa      tens_hours
+                    inc       tens_hours
+                    bra       next0
+                    
+other_1_increment:  ldaa      ones_hours
+                    cmpa      #52
+                    beq       reset_clock
+                    inc       ones_hours
+                    bra       next0
+                    
+reset_clock:        ldaa      #48
+                    staa      ones_seconds
+                    staa      tens_seconds
+                    staa      ones_minutes
+                    staa      tens_minutes
+                    staa      ones_hours
+                    staa      tens_hours
+                    bra       next0
+
+next0:              ldaa      dc_counter
+                    inca      
+                    staa      dc_counter
+                    jsr       read_pot
+                    ldd       pot_value
+                    cmpb      dc_counter
+                    bhs       less_than
+                    ldaa      dc_counter
+                    cmpa      #255
+                    bls       less_255
+                    bra       greater_255
+                    
+next:               brset     Port_T, #1, PS_light_on_1
+next1:              brset     Port_T, #2, PS_light_on_2
+next2:              brset     Port_T, #4, PS_light_on_3
+next3:              brclr     Port_T, #1, PS_light_off_1
+next4:              brclr     Port_T, #2, PS_light_off_2
+next5:              brclr     Port_T, #4, PS_light_off_3
+                
+next6:              brset     sprinkler_on_flag, #1, sprinkler_state2
+
+                    lbra      END_RTI
+
+PS_light_on_1:      bset      Port_S, #%00000010
+                    bra       next1
+                    
+PS_light_on_2:      bset      Port_S, #%00000100
+                    bra       next2
+                    
+PS_light_on_3:      bset      Port_S, #%00001000
+                    bra       next3
+                    
+PS_light_off_1:     bclr      Port_S, #%00000010
+                    bra       next4
+                    
+PS_light_off_2:     bclr      Port_S, #%00000100
+                    bra       next5
+                    
+PS_light_off_3:     bclr      Port_S, #%00001000
+                    bra       next6
+                     
+                    
+     
+less_than:          bset      Port_T, %1000
+                    lbra      next 
+                    
+less_255:           bclr      Port_T, %1000
+                    lbra      next
+                    
+greater_255:        clr       dc_counter
+                    bra       next  
+
+sprinkler_state1:   ldaa      #1
+                    staa      sprinkler_on_flag
+                    bra       sprinkler_state2
+
+sprinkler_state2:   ldaa      iteration_counter
+                    cmpa      #1
+                    beq       third_speed
+                    cmpa      #2    
+                    beq       second_speed
+                    cmpa      #3
+                    beq       first_speed
+                    cmpa      #4
+                    beq       first_speed
+                    cmpa      #5
+                    beq       second_speed
+                    cmpa      #6
+                    beq       third_speed
+                    bra       off_sprnklr_state
+                    
+off_sprnklr_state:  ldaa      #1
+                    staa      sprinkler_off_flag
+                    clr       stepper_event_flag
+                    clr       sprinkler_on_flag
+                    staa      iteration_counter
+                    bra       END_RTI 
+                    
+first_speed:        ldx       acceleration_counter
+                    cpx       #15000
+                    bls       sprinkler_delay1
+                    beq       first_reset
+                    
+first_reset:        clr       acceleration_counter
+                    inc       iteration_counter
+                    bra       sprinkler_delay1
+                    
+second_speed:       ldx       acceleration_counter
+                    cpx       #7500
+                    bls       sprinkler_delay2
+                    beq       second_reset
+                    
+second_reset:       clr       acceleration_counter
+                    inc       iteration_counter
+                    bra       sprinkler_delay2
+                    
+third_speed:        ldx       acceleration_counter
+                    cpx       #3750
+                    bls       sprinkler_delay3
+                    beq       third_reset
+                    
+third_reset:        clr       acceleration_counter
+                    inc       iteration_counter
+                    bra       sprinkler_delay3
+                                                        
+sprinkler_delay1:   ldaa      stepper_delay_counter                          
+                    cmpa      #5                             ;check delay counter
+                    beq       next_stepper1                  ;if equal, help stepper motor do next step
+                    bra       inc_delay
+                    
+sprinkler_delay2:   ldaa      stepper_delay_counter                          
+                    cmpa      #10                             ;check delay counter
+                    beq       next_stepper1                  ;if equal, help stepper motor do next step
+                    bra       inc_delay 
+                    
+sprinkler_delay3:   ldaa      stepper_delay_counter                          
+                    cmpa      #20                             ;check delay counter
+                    beq       next_stepper1                  ;if equal, help stepper motor do next step
+                    bra       inc_delay                     
+                    
+next_stepper1:      ldaa      #1
+                    staa      stepper_event_flag            ;Set stepper event flag only after delay is done
+                    clr       stepper_delay_counter         ;reset delay counter
+                    inc       acceleration_counter
+                             
+                    ldaa      #8
+                    psha                                    ;Sprinkler speaker stuff
+                    ldd       #0
+                    jsr       SendsChr
+                    jsr       PlayTone
+                    leas      1, SP 
+                                                          
+                    bra       END_RTI
+                    
+inc_delay:          inc       stepper_delay_counter
+                    bra       END_RTI
+                    
+END_RTI:            bset      RTIFLG, #$80
+                    rti							                        ;"Duties" to exit ISR

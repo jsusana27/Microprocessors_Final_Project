@@ -1,0 +1,1856 @@
+            INCLUDE 'derivative.inc'
+;********************** EXPORT REFERENCES **************************
+            XDEF Entry, _Startup, RTIFLG, stepper_event_flag, stepper_delay_counter, Port_T, acceleration_counter, iteration_counter, Port_S, sprinkler_off_flag, sprinkler_on_flag, dc_counter, my_pot_value, flashing_flag, port_u_holder, accumulator_b, keypad_sequence, Port_U, lookup_table2, seconds_counter, sec_iteration_counter, ones_seconds, tens_seconds, ones_minutes, tens_minutes, first_pw, second_pw, third_pw, fourth_pw, correct_first, correct_second, correct_third, correct_fourth, disp, char1_flag, char2_flag, char3_flag, char4_flag, ones_hours, tens_hours
+
+            XREF __SEG_END_SSTACK      ; symbol defined by the linker for the end of the stack
+            ; LCD and Pot References
+            XREF    SendsChr, PlayTone, display_string, init_LCD, IRQ_ISR, RTI_ISR, pot_value, read_pot, keypad
+
+
+            
+;********************** VARIABLE DECLARATION  **********************
+my_constant:  SECTION
+Port_T:   	equ     $240
+T_DDR:      equ     $242
+Port_U:     equ     $268
+U_DDR:      equ     $26A
+U_PPS:      equ     $26D
+U_PER:      equ     $26C
+Port_S:     equ     $0248
+S_DDR:      equ     $024A
+Port_P:     equ     $258
+P_DDR:      equ     $25A
+;RTICTL:     equ     $003B ;not needed
+RTIENA:     equ     $0038 ;CRGINT
+RTIFLG:     equ     $0037 ;CRGFLG
+RTI_CTL:    equ     $003B
+stepper_sequence:   dc.b      $A, $12, $14, $C         ;Sequence for stepper motor
+keypad_sequence:    dc.b      $70, $B0, $D0, $E0
+lookup_table1:      dc.b      $14, $88, $84, $82, $48, $44, $42, $28, $24, $22, $18, $12, $81, $41, $21, $11
+lookup_table2:      dc.b      $EB, $77, $7B, $7D, $B7, $BB, $BD, $D7, $DB, $DD, $E7, $ED, $7E, $BE, $DE, $EE
+
+
+my_variable: SECTION
+disp:	    ds.b  33
+counter:  ds.b  1
+stepper_event_flag:        ds.b 1
+stepper_delay_counter:     ds.b 1
+acceleration_counter:      ds.b 10
+iteration_counter          ds.b 1
+sprinkler_off_flag:        ds.b 1
+sprinkler_on_flag:         ds.b 1
+port_u_holder:             ds.b 1
+accumulator_b:             ds.b 1
+dc_flag:                   ds.b 1
+dc_counter:                ds.b 1
+my_pot_value:              ds.b 1
+flashing_flag              ds.b 1
+
+first_pw:                  ds.b 1
+second_pw:                 ds.b 1
+third_pw:                  ds.b 1
+fourth_pw:                 ds.b 1
+correct_first:             ds.b 1
+correct_second:            ds.b 1
+correct_third:             ds.b 1
+correct_fourth:            ds.b 1
+
+tens_month:                ds.b 1
+ones_month:                ds.b 1
+tens_day:                  ds.b 1
+ones_day:                  ds.b 1
+thousands_year:            ds.b 1
+hundreds_year:             ds.b 1
+tens_year:                 ds.b 1
+ones_year:                 ds.b 1
+
+tens_hours:                ds.b 1
+ones_hours:                ds.b 1
+tens_minutes:              ds.b 1
+ones_minutes:              ds.b 1
+tens_seconds:              ds.b 1
+ones_seconds:              ds.b 1
+
+seconds_counter:           ds.b 2
+sec_iteration_counter:     ds.b 1
+
+char1_flag:                ds.b 1
+char2_flag:                ds.b 1
+char3_flag:                ds.b 1
+char4_flag:                ds.b 1
+
+;********************** INITIALIZATIONS  **************************
+MyCode:     SECTION
+Entry:
+_Startup:
+;-------------------- Data initializations ------------------------
+           movb     #0,counter
+
+
+;------------------- String initializations -----------------------
+           ;intializing string "disp" to be:
+           ;"The value of the pot is:      ",0
+           movb     #' ',disp
+           movb     #' ',disp+1
+           movb     #' ',disp+2
+           movb     #' ',disp+3
+           movb     #' ',disp+4
+           movb     #' ',disp+5
+           movb     #' ',disp+6
+           movb     #' ',disp+7
+           movb     #' ',disp+8
+           movb     #' ',disp+9
+           movb     #' ',disp+10
+           movb     #' ',disp+11
+           movb     #' ',disp+12
+           movb     #' ',disp+13
+           movb     #' ',disp+14
+           movb     #' ',disp+15
+           movb     #' ',disp+16
+           movb     #' ',disp+17
+           movb     #' ',disp+18
+           movb     #' ',disp+19
+           movb     #' ',disp+20
+           movb     #' ',disp+21
+           movb     #' ',disp+22
+           movb     #' ',disp+23
+           movb     #' ',disp+24
+           movb     #' ',disp+25
+           movb     #' ',disp+26
+           movb     #' ',disp+27
+           movb     #' ',disp+28
+           movb     #' ',disp+29
+           movb     #' ',disp+30
+           movb     #' ',disp+31
+           movb     #0,disp+32    ;string terminator, acts like '\0'in C 
+            
+;------------------- Device initialization ------------------------
+;dipswitches Port T (b7 – b0)           ;WHERE B [ 7 ~ 0 ] 
+;LEDs Port S (b7 – b0) 
+;Stepper Motor Port P (b5 – b1)         
+;Keypad Port U (b7 – b0) 
+;Pushbutton Port P (b6)            
+;DC Motor Port T (b5)              No, its actually b3[7~0]
+;Speaker Port T (b3) 
+;j6 lower 2 pins for speaker,port t b5,b3[7~0] must be STARTED up.
+
+            LDS  #__SEG_END_SSTACK     ;initialize the stack pointer
+            movb      #$FF,S_DDR       ;LEDS output
+            movb      #$1E,P_DDR       ;stepper and PB b5[7~0]
+            movb      #$28,T_DDR       ;b5[7~0] speaker output, b3 out dc MUST BE FLIPPED UP
+            ;movb      #$80,INTCR       ;edge trigger - not needed
+            movb      #$40,INTCR       ;enable IRQ - must have vector
+            movb      #$80,RTIENA      ;enable rti
+            
+            movb      #$51, RTI_CTL     ;My RTI freqeuncy divider, 4 microseconds for now
+            
+;YOU DECIDE THE DIV FOR YOUR RTI, .128MS IS RECCOMMENDED FOR THE SPEAKER
+;UNCOMMENT THE LINE BELOW IF THAT IS WHAT YOU WANT TO USE            
+            ;movb      #$10,RTICTL      ;set div: .128ms for speaker 
+            
+            movb      #$F0,U_DDR
+            movb      #$F0,U_PPS
+            movb      #$0F,U_PER       ;init registers of U port
+            jsr       init_LCD
+            
+;************************ MAIN CODE ****************************
+            CLI                        ;officially in operational mode (move if you need a startup state), enable interrupts                        
+
+ ;----------------- MAIN FLAG/STATE MACHINE --------------------
+
+            ;read above! you still must decide on your rti frequency divider
+            
+                    ldaa      #0
+                    staa      stepper_event_flag
+                    staa      stepper_delay_counter
+                    staa      sprinkler_off_flag
+                    staa      dc_counter
+                    staa      flashing_flag
+                    ldaa      #1
+                    staa      iteration_counter
+                    
+                    ldaa      #0
+                    staa      correct_first
+                    ldaa      #$B
+                    staa      correct_second
+                    ldaa      #$D
+                    staa      correct_third
+                    ldaa      #0
+                    staa      correct_fourth
+                    
+                    ldaa      #0
+                    staa      seconds_counter
+                    staa      sec_iteration_counter
+                    
+                    ldaa      #48
+                    staa      tens_hours
+                    staa      ones_hours
+                    staa      tens_minutes
+                    staa      ones_minutes
+                    staa      tens_seconds
+                    staa      ones_seconds
+                    
+                    ldaa      #49
+                    staa      tens_month
+                    ldaa      #49
+                    staa      ones_month
+                    ldaa      #50
+                    staa      tens_day
+                    ldaa      #53
+                    staa      ones_day
+                    ldaa      #50
+                    staa      thousands_year
+                    ldaa      #48
+                    staa      hundreds_year
+                    ldaa      #50
+                    staa      tens_year
+                    staa      ones_year
+                    
+                    
+                    
+Loop1:              movb      tens_month,disp
+                    movb      ones_month,disp+1
+                    movb      #'/',disp+2
+                    movb      tens_day,disp+3
+                    movb      ones_day,disp+4
+                    movb      #'/',disp+5
+                    movb      thousands_year,disp+6
+                    movb      hundreds_year,disp+7
+                    movb      tens_year,disp+8
+                    movb      ones_year,disp+9
+                    movb      #' ',disp+10
+                    movb      #' ',disp+11
+                    movb      #' ',disp+12
+                    movb      #' ',disp+13
+                    movb      #' ',disp+14
+                    movb      #' ',disp+15
+                    movb      tens_hours,disp+16
+                    movb      ones_hours,disp+17
+                    movb      #':',disp+18
+                    movb      tens_minutes,disp+19
+                    movb      ones_minutes,disp+20
+                    movb      #':',disp+21
+                    movb      tens_seconds,disp+22
+                    movb      ones_seconds,disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32 
+                    ldd       #disp
+                    jsr       display_string
+                    brclr     Port_P, #$20, Reset_2
+                    brset     sprinkler_on_flag, #1, sprinkler_state1
+                    brset     Port_T, #64, sprinkler_check1
+                    jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #15
+                    beq       ADMIN_Password
+                    lbra      Loop1
+                    
+Reset_2:            lbra      Reset
+                    
+sprinkler_state1:   lbra      sprinkler_state2
+
+sprinkler_check1:   brclr     Port_T, #64, turn_on_sprinkler
+                    bra       sprinkler_check1
+                    
+turn_on_sprinkler:  ldaa      #1
+                    staa      sprinkler_on_flag
+                    lbra      sprinkler_state2
+                    
+ADMIN_Password:     movb      #'E',disp
+                    movb      #'n',disp+1
+                    movb      #'t',disp+2
+                    movb      #'e',disp+3
+                    movb      #'r',disp+4
+                    movb      #' ',disp+5
+                    movb      #'p',disp+6
+                    movb      #'a',disp+7
+                    movb      #'s',disp+8
+                    movb      #'s',disp+9
+                    movb      #'w',disp+10
+                    movb      #'o',disp+11
+                    movb      #'r',disp+12
+                    movb      #'d',disp+13
+                    movb      #':',disp+14
+                    movb      #' ',disp+15
+                    movb      #' ',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+wait1:              jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #20
+                    beq       wait1
+                    staa      first_pw
+                    
+                    movb      #'E',disp
+                    movb      #'n',disp+1
+                    movb      #'t',disp+2
+                    movb      #'e',disp+3
+                    movb      #'r',disp+4
+                    movb      #' ',disp+5
+                    movb      #'p',disp+6
+                    movb      #'a',disp+7
+                    movb      #'s',disp+8
+                    movb      #'s',disp+9
+                    movb      #'w',disp+10
+                    movb      #'o',disp+11
+                    movb      #'r',disp+12
+                    movb      #'d',disp+13
+                    movb      #':',disp+14
+                    movb      #' ',disp+15
+                    movb      #'*',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+wait2:              jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #20
+                    beq       wait2
+                    staa      second_pw
+                    
+                     
+                    movb      #'E',disp
+                    movb      #'n',disp+1
+                    movb      #'t',disp+2
+                    movb      #'e',disp+3
+                    movb      #'r',disp+4
+                    movb      #' ',disp+5
+                    movb      #'p',disp+6
+                    movb      #'a',disp+7
+                    movb      #'s',disp+8
+                    movb      #'s',disp+9
+                    movb      #'w',disp+10
+                    movb      #'o',disp+11
+                    movb      #'r',disp+12
+                    movb      #'d',disp+13
+                    movb      #':',disp+14
+                    movb      #' ',disp+15
+                    movb      #'*',disp+16
+                    movb      #'*',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+wait3:              jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #20
+                    beq       wait3
+                    staa      third_pw
+                    
+                    movb      #'E',disp
+                    movb      #'n',disp+1
+                    movb      #'t',disp+2
+                    movb      #'e',disp+3
+                    movb      #'r',disp+4
+                    movb      #' ',disp+5
+                    movb      #'p',disp+6
+                    movb      #'a',disp+7
+                    movb      #'s',disp+8
+                    movb      #'s',disp+9
+                    movb      #'w',disp+10
+                    movb      #'o',disp+11
+                    movb      #'r',disp+12
+                    movb      #'d',disp+13
+                    movb      #':',disp+14
+                    movb      #' ',disp+15
+                    movb      #'*',disp+16
+                    movb      #'*',disp+17
+                    movb      #'*',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+wait4:              jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #20
+                    beq       wait4
+                    staa      fourth_pw
+                    
+                    ldaa      first_pw
+                    cmpa      correct_first
+                    beq       next1
+                    lbra      sec_question
+                    
+next1:              ldaa      second_pw
+                    cmpa      correct_second
+                    beq       next2
+                    lbra      sec_question
+                    
+next2:              ldaa      third_pw
+                    cmpa      correct_third
+                    beq       next3
+                    lbra      sec_question
+                    
+next3:              ldaa      fourth_pw
+                    cmpa      correct_fourth
+                    beq       Date4
+                    lbra      sec_question
+                    
+Date4:              lbra      Date
+                    
+sec_question:       movb      #'F',disp
+                    movb      #'a',disp+1
+                    movb      #'v',disp+2
+                    movb      #'o',disp+3
+                    movb      #'r',disp+4
+                    movb      #'i',disp+5
+                    movb      #'t',disp+6
+                    movb      #'e',disp+7
+                    movb      #' ',disp+8
+                    movb      #'n',disp+9
+                    movb      #'u',disp+10
+                    movb      #'m',disp+11
+                    movb      #'b',disp+12
+                    movb      #'e',disp+13
+                    movb      #'r',disp+14
+                    movb      #'?',disp+15
+                    movb      #' ',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+wait5:              jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #20
+                    beq       wait5
+                    cmpa      #$D
+                    beq       Date
+                    lbra      Loop1
+                    
+Date:               movb      #'S',disp
+                    movb      #'y',disp+1
+                    movb      #'s',disp+2
+                    movb      #'t',disp+3
+                    movb      #'e',disp+4
+                    movb      #'m',disp+5
+                    movb      #' ',disp+6
+                    movb      #'S',disp+7
+                    movb      #'e',disp+8
+                    movb      #'t',disp+9
+                    movb      #'t',disp+10
+                    movb      #'i',disp+11
+                    movb      #'n',disp+12
+                    movb      #'g',disp+13
+                    movb      #'s',disp+14
+                    movb      #' ',disp+15
+                    movb      #'D',disp+16
+                    movb      #'a',disp+17
+                    movb      #'t',disp+18
+                    movb      #'e',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+ invalid1:          jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #$A
+                    beq       Time
+                    cmpa      #$B
+                    beq       Password2
+                    cmpa      #$F
+                    beq       Year2
+                    bra       invalid1
+                    
+Year2:              lbra      Year
+                    
+Password2:          lbra      Password
+                    
+Time:               movb      #'S',disp
+                    movb      #'y',disp+1
+                    movb      #'s',disp+2
+                    movb      #'t',disp+3
+                    movb      #'e',disp+4
+                    movb      #'m',disp+5
+                    movb      #' ',disp+6
+                    movb      #'S',disp+7
+                    movb      #'e',disp+8
+                    movb      #'t',disp+9
+                    movb      #'t',disp+10
+                    movb      #'i',disp+11
+                    movb      #'n',disp+12
+                    movb      #'g',disp+13
+                    movb      #'s',disp+14
+                    movb      #' ',disp+15
+                    movb      #'T',disp+16
+                    movb      #'i',disp+17
+                    movb      #'m',disp+18
+                    movb      #'e',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+invalid2:           jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #$A
+                    beq       Password
+                    cmpa      #$B
+                    beq       Date2
+                    cmpa      #$F
+                    beq       Hours2
+                    bra       invalid2
+                    
+Hours2:             lbra      Edit_Hours
+                    
+Date2:              lbra      Date       
+                    
+Password:           movb      #'S',disp
+                    movb      #'y',disp+1
+                    movb      #'s',disp+2
+                    movb      #'t',disp+3
+                    movb      #'e',disp+4
+                    movb      #'m',disp+5
+                    movb      #' ',disp+6
+                    movb      #'S',disp+7
+                    movb      #'e',disp+8
+                    movb      #'t',disp+9
+                    movb      #'t',disp+10
+                    movb      #'i',disp+11
+                    movb      #'n',disp+12
+                    movb      #'g',disp+13
+                    movb      #'s',disp+14
+                    movb      #' ',disp+15
+                    movb      #'P',disp+16
+                    movb      #'a',disp+17
+                    movb      #'s',disp+18
+                    movb      #'s',disp+19
+                    movb      #'w',disp+20
+                    movb      #'o',disp+21
+                    movb      #'r',disp+22
+                    movb      #'d',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+invalid3:           jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #$A
+                    beq       Date3
+                    cmpa      #$B
+                    beq       Time2
+                    cmpa      #$F
+                    beq       edit_password2
+                    bra       invalid3
+                    
+edit_password2:     lbra      edit_password
+                    
+Time2:              lbra      Time
+                    
+Date3:              lbra      Date
+                    
+Year3:              lbra      Year
+                    
+Year:               movb      #'S',disp
+                    movb      #'y',disp+1
+                    movb      #'s',disp+2
+                    movb      #'t',disp+3
+                    movb      #'e',disp+4
+                    movb      #'m',disp+5
+                    movb      #' ',disp+6
+                    movb      #'S',disp+7
+                    movb      #'e',disp+8
+                    movb      #'t',disp+9
+                    movb      #'t',disp+10
+                    movb      #'i',disp+11
+                    movb      #'n',disp+12
+                    movb      #'g',disp+13
+                    movb      #'s',disp+14
+                    movb      #' ',disp+15
+                    movb      #'Y',disp+16
+                    movb      #'e',disp+17
+                    movb      #'a',disp+18
+                    movb      #'r',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+invalid4:           jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #$A
+                    beq       Month
+                    cmpa      #$B
+                    beq       Day2
+                    cmpa      #$F
+                    beq       Edit_Year2
+                    bra       invalid4
+                    
+Edit_Year2:         lbra      Edit_Year
+                    
+Day2:               lbra      Day
+                    
+Month:              movb      #'S',disp
+                    movb      #'y',disp+1
+                    movb      #'s',disp+2
+                    movb      #'t',disp+3
+                    movb      #'e',disp+4
+                    movb      #'m',disp+5
+                    movb      #' ',disp+6
+                    movb      #'S',disp+7
+                    movb      #'e',disp+8
+                    movb      #'t',disp+9
+                    movb      #'t',disp+10
+                    movb      #'i',disp+11
+                    movb      #'n',disp+12
+                    movb      #'g',disp+13
+                    movb      #'s',disp+14
+                    movb      #' ',disp+15
+                    movb      #'M',disp+16
+                    movb      #'o',disp+17
+                    movb      #'n',disp+18
+                    movb      #'t',disp+19
+                    movb      #'h',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+invalid5:           jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #$A
+                    beq       Day
+                    cmpa      #$B
+                    beq       Year4
+                    cmpa      #$F
+                    beq       Edit_Month2
+                    bra       invalid5
+                    
+Edit_Month2:        lbra      Edit_Month
+                    
+Year4:              lbra      Year
+                    
+Day:                movb      #'S',disp
+                    movb      #'y',disp+1
+                    movb      #'s',disp+2
+                    movb      #'t',disp+3
+                    movb      #'e',disp+4
+                    movb      #'m',disp+5
+                    movb      #' ',disp+6
+                    movb      #'S',disp+7
+                    movb      #'e',disp+8
+                    movb      #'t',disp+9
+                    movb      #'t',disp+10
+                    movb      #'i',disp+11
+                    movb      #'n',disp+12
+                    movb      #'g',disp+13
+                    movb      #'s',disp+14
+                    movb      #' ',disp+15
+                    movb      #'D',disp+16
+                    movb      #'a',disp+17
+                    movb      #'y',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+invalid6:           jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #$A
+                    beq       Year5
+                    cmpa      #$B
+                    beq       Month2
+                    cmpa      #$F
+                    beq       Edit_Day2
+                    bra       invalid6
+                    
+Edit_Day2:          lbra      Edit_Day
+                    
+Month2:             lbra      Month
+                    
+Year5:              lbra      Year
+                    
+Edit_Hours:         movb      #'H',disp
+                    movb      #'o',disp+1
+                    movb      #'u',disp+2
+                    movb      #'r',disp+3
+                    movb      #'s',disp+4
+                    movb      #' ',disp+5
+                    movb      #'t',disp+6
+                    movb      #'e',disp+7
+                    movb      #'n',disp+8
+                    movb      #'s',disp+9
+                    movb      #' ',disp+10
+                    movb      #'p',disp+11
+                    movb      #'l',disp+12
+                    movb      #'a',disp+13
+                    movb      #'c',disp+14
+                    movb      #'e',disp+15
+                    movb      #'?',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+invalid17:          jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #3
+                    bhs       invalid17
+                    ldab      #48
+                    aba
+                    staa      tens_hours
+                    lbra      Edit_1_Hours
+                    
+Edit_1_Hours:       movb      #'H',disp
+                    movb      #'o',disp+1
+                    movb      #'u',disp+2
+                    movb      #'r',disp+3
+                    movb      #'s',disp+4
+                    movb      #' ',disp+5
+                    movb      #'o',disp+6
+                    movb      #'n',disp+7
+                    movb      #'e',disp+8
+                    movb      #'s',disp+9
+                    movb      #' ',disp+10
+                    movb      #'p',disp+11
+                    movb      #'l',disp+12
+                    movb      #'a',disp+13
+                    movb      #'c',disp+14
+                    movb      #'e',disp+15
+                    movb      #'?',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+                    ldaa      tens_hours
+                    cmpa      #50
+                    beq       invalid19
+                    bra       invalid18
+                    
+invalid18:          jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #10
+                    bhs       invalid18
+                    ldab      #48
+                    aba
+                    staa      ones_hours
+                    lbra      Loop1
+                    
+invalid19:          jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #4
+                    bhs       invalid19
+                    ldab      #48
+                    aba
+                    staa      ones_hours
+                    lbra      Loop1   
+
+edit_password:      movb      #'E',disp
+                    movb      #'d',disp+1
+                    movb      #'i',disp+2
+                    movb      #'t',disp+3
+                    movb      #' ',disp+4
+                    movb      #'p',disp+5
+                    movb      #'a',disp+6
+                    movb      #'s',disp+7
+                    movb      #'s',disp+8
+                    movb      #'w',disp+9
+                    movb      #'o',disp+10
+                    movb      #'r',disp+11
+                    movb      #'d',disp+12
+                    movb      #':',disp+13
+                    movb      #' ',disp+14
+                    movb      #' ',disp+15
+                    movb      #' ',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+wait6:              jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #20
+                    beq       wait6
+                    staa      correct_first
+                    
+                    movb      #'E',disp
+                    movb      #'d',disp+1
+                    movb      #'i',disp+2
+                    movb      #'t',disp+3
+                    movb      #' ',disp+4
+                    movb      #'p',disp+5
+                    movb      #'a',disp+6
+                    movb      #'s',disp+7
+                    movb      #'s',disp+8
+                    movb      #'w',disp+9
+                    movb      #'o',disp+10
+                    movb      #'r',disp+11
+                    movb      #'d',disp+12
+                    movb      #':',disp+13
+                    movb      #' ',disp+14
+                    movb      #' ',disp+15
+                    movb      #'*',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+wait7:              jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #20
+                    beq       wait7
+                    staa      correct_second
+                    
+                    movb      #'E',disp
+                    movb      #'d',disp+1
+                    movb      #'i',disp+2
+                    movb      #'t',disp+3
+                    movb      #' ',disp+4
+                    movb      #'p',disp+5
+                    movb      #'a',disp+6
+                    movb      #'s',disp+7
+                    movb      #'s',disp+8
+                    movb      #'w',disp+9
+                    movb      #'o',disp+10
+                    movb      #'r',disp+11
+                    movb      #'d',disp+12
+                    movb      #':',disp+13
+                    movb      #' ',disp+14
+                    movb      #' ',disp+15
+                    movb      #'*',disp+16
+                    movb      #'*',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+wait8:              jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #20
+                    beq       wait8
+                    staa      correct_third
+                    
+                    movb      #'E',disp
+                    movb      #'d',disp+1
+                    movb      #'i',disp+2
+                    movb      #'t',disp+3
+                    movb      #' ',disp+4
+                    movb      #'p',disp+5
+                    movb      #'a',disp+6
+                    movb      #'s',disp+7
+                    movb      #'s',disp+8
+                    movb      #'w',disp+9
+                    movb      #'o',disp+10
+                    movb      #'r',disp+11
+                    movb      #'d',disp+12
+                    movb      #':',disp+13
+                    movb      #' ',disp+14
+                    movb      #' ',disp+15
+                    movb      #'*',disp+16
+                    movb      #'*',disp+17
+                    movb      #'*',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+wait9:              jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #20
+                    beq       wait9
+                    staa      correct_fourth
+                    
+                    lbra      Loop1
+                    
+Edit_Month:         movb      #'T',disp
+                    movb      #'e',disp+1
+                    movb      #'n',disp+2
+                    movb      #'s',disp+3
+                    movb      #' ',disp+4
+                    movb      #'p',disp+5
+                    movb      #'l',disp+6
+                    movb      #'a',disp+7
+                    movb      #'c',disp+8
+                    movb      #'e',disp+9
+                    movb      #'?',disp+10
+                    movb      #' ',disp+11
+                    movb      #' ',disp+12
+                    movb      #' ',disp+13
+                    movb      #' ',disp+14
+                    movb      #' ',disp+15
+                    movb      #' ',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+invalid11:          jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #2
+                    bhs       invalid11
+                    ldab      #48
+                    aba
+                    staa      tens_month
+                    lbra      Edit_1_Month
+                    
+Edit_1_Month:       movb      #'O',disp
+                    movb      #'n',disp+1
+                    movb      #'e',disp+2
+                    movb      #'s',disp+3
+                    movb      #' ',disp+4
+                    movb      #'p',disp+5
+                    movb      #'l',disp+6
+                    movb      #'a',disp+7
+                    movb      #'c',disp+8
+                    movb      #'e',disp+9
+                    movb      #'?',disp+10
+                    movb      #' ',disp+11
+                    movb      #' ',disp+12
+                    movb      #' ',disp+13
+                    movb      #' ',disp+14
+                    movb      #' ',disp+15
+                    movb      #' ',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+                    ldaa      tens_month
+                    cmpa      #49
+                    beq       invalid12
+                    bra       invalid13
+     
+invalid13:          jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #10
+                    bhs       invalid13
+                    ldab      #48
+                    aba
+                    staa      ones_month
+                    lbra      Loop1
+                    
+invalid12:          jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #3
+                    bhs       invalid12
+                    ldab      #48
+                    aba
+                    staa      ones_month
+                    lbra      Loop1
+
+Edit_Day:           movb      #'T',disp
+                    movb      #'e',disp+1
+                    movb      #'n',disp+2
+                    movb      #'s',disp+3
+                    movb      #' ',disp+4
+                    movb      #'p',disp+5
+                    movb      #'l',disp+6
+                    movb      #'a',disp+7
+                    movb      #'c',disp+8
+                    movb      #'e',disp+9
+                    movb      #'?',disp+10
+                    movb      #' ',disp+11
+                    movb      #' ',disp+12
+                    movb      #' ',disp+13
+                    movb      #' ',disp+14
+                    movb      #' ',disp+15
+                    movb      #' ',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+invalid15:          jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #4
+                    bhs       invalid15
+                    ldab      #48
+                    aba
+                    staa      tens_day
+                    lbra      Edit_1_Day
+                    
+Edit_1_Day:         movb      #'O',disp
+                    movb      #'n',disp+1
+                    movb      #'e',disp+2
+                    movb      #'s',disp+3
+                    movb      #' ',disp+4
+                    movb      #'p',disp+5
+                    movb      #'l',disp+6
+                    movb      #'a',disp+7
+                    movb      #'c',disp+8
+                    movb      #'e',disp+9
+                    movb      #'?',disp+10
+                    movb      #' ',disp+11
+                    movb      #' ',disp+12
+                    movb      #' ',disp+13
+                    movb      #' ',disp+14
+                    movb      #' ',disp+15
+                    movb      #' ',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+                    ldaa      tens_day
+                    cmpa      #51
+                    beq       invalid16
+                    bra       invalid14
+                    
+invalid16:          ldaa      #48
+                    staa      ones_day
+                    lbra      Loop1
+                    
+invalid14:          jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #10
+                    bhs       invalid14
+                    ldab      #48
+                    aba
+                    staa      ones_day
+                    lbra      Loop1
+
+
+Edit_Year:          movb      #'T',disp
+                    movb      #'h',disp+1
+                    movb      #'o',disp+2
+                    movb      #'u',disp+3
+                    movb      #'s',disp+4
+                    movb      #'a',disp+5
+                    movb      #'n',disp+6
+                    movb      #'d',disp+7
+                    movb      #'s',disp+8
+                    movb      #' ',disp+9
+                    movb      #'P',disp+10
+                    movb      #'l',disp+11
+                    movb      #'a',disp+12
+                    movb      #'c',disp+13
+                    movb      #'e',disp+14
+                    movb      #'?',disp+15
+                    movb      #' ',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+invalid7:           jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #10
+                    bhs       invalid7
+                    ldab      #48
+                    aba
+                    staa      thousands_year
+                    lbra      Edit_100_Year
+                    
+Edit_100_Year:      movb      #'H',disp
+                    movb      #'u',disp+1
+                    movb      #'n',disp+2
+                    movb      #'d',disp+3
+                    movb      #'r',disp+4
+                    movb      #'e',disp+5
+                    movb      #'d',disp+6
+                    movb      #'s',disp+7
+                    movb      #' ',disp+8
+                    movb      #'p',disp+9
+                    movb      #'l',disp+10
+                    movb      #'a',disp+11
+                    movb      #'c',disp+12
+                    movb      #'e',disp+13
+                    movb      #'?',disp+14
+                    movb      #' ',disp+15
+                    movb      #' ',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+invalid8:           jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #10
+                    bhs       invalid8
+                    ldab      #48
+                    aba
+                    staa      hundreds_year
+                    lbra      Edit_10_Year
+                    
+                    
+Edit_10_Year:       movb      #'T',disp
+                    movb      #'e',disp+1
+                    movb      #'n',disp+2
+                    movb      #'s',disp+3
+                    movb      #' ',disp+4
+                    movb      #'p',disp+5
+                    movb      #'l',disp+6
+                    movb      #'a',disp+7
+                    movb      #'c',disp+8
+                    movb      #'e',disp+9
+                    movb      #'?',disp+10
+                    movb      #' ',disp+11
+                    movb      #' ',disp+12
+                    movb      #' ',disp+13
+                    movb      #' ',disp+14
+                    movb      #' ',disp+15
+                    movb      #' ',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+invalid9:           jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #10
+                    bhs       invalid9
+                    ldab      #48
+                    aba
+                    staa      tens_year
+                    lbra      Edit_1_Year
+                    
+Edit_1_Year:        movb      #'O',disp
+                    movb      #'n',disp+1
+                    movb      #'e',disp+2
+                    movb      #'s',disp+3
+                    movb      #' ',disp+4
+                    movb      #'p',disp+5
+                    movb      #'l',disp+6
+                    movb      #'a',disp+7
+                    movb      #'c',disp+8
+                    movb      #'e',disp+9
+                    movb      #'?',disp+10
+                    movb      #' ',disp+11
+                    movb      #' ',disp+12
+                    movb      #' ',disp+13
+                    movb      #' ',disp+14
+                    movb      #' ',disp+15
+                    movb      #' ',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string
+                    
+invalid10:          jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #10
+                    bhs       invalid10
+                    ldab      #48
+                    aba
+                    staa      ones_year
+                    lbra      Loop1               
+                   
+sprinkler_state2:   ldab      #64
+                    stab      Port_S                              ;Light up LED 7
+                    
+                    movb      #'S',disp
+                    movb      #'p',disp+1
+                    movb      #'r',disp+2
+                    movb      #'i',disp+3
+                    movb      #'n',disp+4
+                    movb      #'k',disp+5
+                    movb      #'l',disp+6
+                    movb      #'i',disp+7
+                    movb      #'n',disp+8
+                    movb      #'g',disp+9
+                    movb      #' ',disp+10
+                    movb      #'i',disp+11
+                    movb      #'n',disp+12
+                    movb      #' ',disp+13
+                    movb      #' ',disp+14
+                    movb      #' ',disp+15
+                    movb      #' ',disp+16
+                    movb      #'p',disp+17
+                    movb      #'r',disp+18
+                    movb      #'o',disp+19
+                    movb      #'g',disp+20
+                    movb      #'r',disp+21
+                    movb      #'e',disp+22
+                    movb      #'s',disp+23
+                    movb      #'s',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ldd       #disp
+                    jsr       display_string                      ;Sprinkler LCD stuff
+                    lbra      stepper_loop1
+                    
+turn_off_sprinkler2:lbra      turn_off_sprinkler 
+                    
+stepper_loop1:      ldab      #64
+                    stab      Port_S                              ;Light up LED 7
+                    ;movb      #'S',disp
+                    ;movb      #'p',disp+1
+                    ;movb      #'r',disp+2
+                    ;movb      #'i',disp+3
+                    ;movb      #'n',disp+4
+                    ;movb      #'k',disp+5
+                    ;movb      #'l',disp+6
+                    ;movb      #'i',disp+7
+                    ;movb      #'n',disp+8
+                    ;movb      #'g',disp+9
+                    ;movb      #' ',disp+10
+                    ;movb      #'i',disp+11
+                    ;movb      #'n',disp+12
+                    ;movb      #' ',disp+13
+                    ;movb      #' ',disp+14
+                    ;movb      #' ',disp+15
+                    ;movb      #' ',disp+16
+                    ;movb      #'p',disp+17
+                    ;movb      #'r',disp+18
+                    ;movb      #'o',disp+19
+                    ;movb      #'g',disp+20
+                    ;movb      #'r',disp+21
+                    ;movb      #'e',disp+22
+                    ;movb      #'s',disp+23
+                    ;movb      #'s',disp+24
+                    ;movb      #' ',disp+25
+                    ;movb      #' ',disp+26
+                    ;movb      #' ',disp+27
+                    ;movb      #' ',disp+28
+                    ;movb      #' ',disp+29
+                    ;movb      #' ',disp+30
+                    ;movb      #' ',disp+31
+                    ;movb      #0,disp+32    ;string terminator, acts like '\0'in C  
+                    ;ldd       #disp
+                    ;jsr       display_string                      ;Sprinkler LCD stuff
+                    ldx       #stepper_sequence 
+                    ldab      #0
+stepper_loop2:      brset     sprinkler_off_flag, #1, turn_off_sprinkler
+                    cmpb      #4
+                    beq       stepper_loop1_2				               
+                    ldaa      stepper_event_flag                  
+                    cmpa      #1                                  ;Check stepper event flag
+                    bne       stepper_loop2                     ;If 0/not equal to 1, go back and don't 
+                                                                  ;increment
+                    clr       stepper_event_flag                  ;Otherwise, clear event flag                             
+                    ldaa      1, x+
+                    staa      Port_P                              ;Go through next step in stepper
+                    incb                                          ;Increment B 
+                    lbra      stepper_loop2
+                    
+stepper_loop1_2:    lbra      stepper_loop1                   
+                    
+turn_off_sprinkler: bclr    Port_S, #%01000000                       ;Turn off LED
+                    
+                    movb      #' ',disp
+                    movb      #' ',disp+1
+                    movb      #' ',disp+2
+                    movb      #' ',disp+3
+                    movb      #' ',disp+4
+                    movb      #' ',disp+5
+                    movb      #' ',disp+6
+                    movb      #' ',disp+7
+                    movb      #' ',disp+8
+                    movb      #' ',disp+9
+                    movb      #' ',disp+10
+                    movb      #' ',disp+11
+                    movb      #' ',disp+12
+                    movb      #' ',disp+13
+                    movb      #' ',disp+14
+                    movb      #' ',disp+15
+                    movb      #' ',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32
+                    ldd       #disp
+                    jsr       display_string            ;Reset LCD
+                    
+                    clr       sprinkler_off_flag        ;Clear the sprinkler off flag
+                    
+                    lbra       Loop1
+                    
+Reset:              movb      #'E',disp
+                    movb      #'n',disp+1
+                    movb      #'t',disp+2
+                    movb      #'e',disp+3
+                    movb      #'r',disp+4
+                    movb      #' ',disp+5
+                    movb      #'p',disp+6
+                    movb      #'a',disp+7
+                    movb      #'s',disp+8
+                    movb      #'s',disp+9
+                    movb      #'w',disp+10
+                    movb      #'o',disp+11
+                    movb      #'r',disp+12
+                    movb      #'d',disp+13
+                    movb      #':',disp+14
+                    movb      #' ',disp+15
+                    movb      #' ',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32
+                    ldd       #disp
+                    jsr       display_string            ;Reset LCD
+                    
+invalid20:          jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #20
+                    beq       invalid20
+                    staa      first_pw
+                    lbra      Reset_1_done
+                    
+Reset_1_done:       movb      #'E',disp
+                    movb      #'n',disp+1
+                    movb      #'t',disp+2
+                    movb      #'e',disp+3
+                    movb      #'r',disp+4
+                    movb      #' ',disp+5
+                    movb      #'p',disp+6
+                    movb      #'a',disp+7
+                    movb      #'s',disp+8
+                    movb      #'s',disp+9
+                    movb      #'w',disp+10
+                    movb      #'o',disp+11
+                    movb      #'r',disp+12
+                    movb      #'d',disp+13
+                    movb      #':',disp+14
+                    movb      #' ',disp+15
+                    movb      #'*',disp+16
+                    movb      #' ',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32
+                    ldd       #disp
+                    jsr       display_string            ;Reset LCD
+                    
+invalid21:          jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #20
+                    beq       invalid21
+                    staa      second_pw
+                    lbra      Reset_2_done
+                    
+Reset_2_done:       movb      #'E',disp
+                    movb      #'n',disp+1
+                    movb      #'t',disp+2
+                    movb      #'e',disp+3
+                    movb      #'r',disp+4
+                    movb      #' ',disp+5
+                    movb      #'p',disp+6
+                    movb      #'a',disp+7
+                    movb      #'s',disp+8
+                    movb      #'s',disp+9
+                    movb      #'w',disp+10
+                    movb      #'o',disp+11
+                    movb      #'r',disp+12
+                    movb      #'d',disp+13
+                    movb      #':',disp+14
+                    movb      #' ',disp+15
+                    movb      #'*',disp+16
+                    movb      #'*',disp+17
+                    movb      #' ',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32
+                    ldd       #disp
+                    jsr       display_string            ;Reset LCD
+                    
+invalid22:          jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #20
+                    beq       invalid22
+                    staa      third_pw
+                    lbra      Reset_3_done
+                    
+Reset_3_done:       movb      #'E',disp
+                    movb      #'n',disp+1
+                    movb      #'t',disp+2
+                    movb      #'e',disp+3
+                    movb      #'r',disp+4
+                    movb      #' ',disp+5
+                    movb      #'p',disp+6
+                    movb      #'a',disp+7
+                    movb      #'s',disp+8
+                    movb      #'s',disp+9
+                    movb      #'w',disp+10
+                    movb      #'o',disp+11
+                    movb      #'r',disp+12
+                    movb      #'d',disp+13
+                    movb      #':',disp+14
+                    movb      #' ',disp+15
+                    movb      #'*',disp+16
+                    movb      #'*',disp+17
+                    movb      #'*',disp+18
+                    movb      #' ',disp+19
+                    movb      #' ',disp+20
+                    movb      #' ',disp+21
+                    movb      #' ',disp+22
+                    movb      #' ',disp+23
+                    movb      #' ',disp+24
+                    movb      #' ',disp+25
+                    movb      #' ',disp+26
+                    movb      #' ',disp+27
+                    movb      #' ',disp+28
+                    movb      #' ',disp+29
+                    movb      #' ',disp+30
+                    movb      #' ',disp+31
+                    movb      #0,disp+32
+                    ldd       #disp
+                    jsr       display_string            ;Reset LCD
+                    
+invalid23:          jsr       keypad
+                    ldaa      accumulator_b
+                    cmpa      #20
+                    beq       invalid23
+                    staa      fourth_pw
+                    lbra      check_pass_pb
+                    
+check_pass_pb:      ldaa      first_pw
+                    cmpa      correct_first
+                    beq       next10
+                    lbra      wrong_pass_pb
+                    
+next10:             ldaa      second_pw
+                    cmpa      correct_second
+                    beq       next11
+                    lbra      wrong_pass_pb
+                    
+next11:             ldaa      third_pw
+                    cmpa      correct_third
+                    beq       next12
+                    lbra      wrong_pass_pb
+                    
+next12:             ldaa      fourth_pw
+                    cmpa      correct_fourth
+                    beq       correct_pass_pb
+                    lbra      wrong_pass_pb
+                    
+wrong_pass_pb:      ldaa      #0
+                    staa      first_pw
+                    staa      second_pw
+                    staa      third_pw
+                    staa      fourth_pw
+                    lbra      Reset
+                    
+correct_pass_pb:    ldaa      #0
+                    staa      correct_first
+                    ldaa      #$B
+                    staa      correct_second
+                    ldaa      #$D
+                    staa      correct_third
+                    ldaa      #0
+                    staa      correct_fourth
+                    
+                    ldaa      #$30
+                    adda      #1
+                    staa      tens_month
+                    ldaa      #$30
+                    adda      #1
+                    staa      ones_month
+                    ldaa      #$30
+                    adda      #2
+                    staa      tens_day
+                    ldaa      #$30
+                    adda      #5
+                    staa      ones_day
+                    ldaa      #$30
+                    adda      #2
+                    staa      thousands_year
+                    ldaa      #$30
+                    staa      hundreds_year
+                    ldaa      #$30
+                    adda      #2
+                    staa      tens_year
+                    staa      ones_year
+                    
+                    ldaa      #$30
+                    staa      ones_seconds
+                    staa      tens_seconds
+                    staa      ones_minutes
+                    staa      tens_minutes
+                    staa      ones_hours
+                    staa      tens_hours
+                    
+                    lbra      Loop1
+                    
+                    
+                    
+  			                
+			                   
+                                                            
+                                                            
+                                                            
+
+   
+                    
+
+
+

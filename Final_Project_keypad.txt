@@ -1,0 +1,46 @@
+              XDEF keypad
+              XREF delay,port_u_holder, accumulator_b, Port_U, lookup_table2, keypad_sequence
+              
+
+
+keypad:
+start:        ldaa    #20
+              staa    accumulator_b         ;Our value for if there is no keypress
+              ldx     #keypad_sequence
+              ldab    #0
+loop:         cmpb    #4
+              beq     done                  ;Change I made so that program doesn't completely stop to wait 
+                                            ;for keypress
+              ldaa    1, x+
+              staa    Port_U
+              incb
+              bra     delay2
+start2:       ldaa    Port_U
+              staa    port_u_holder
+              anda    #$F
+              cmpa    #$0F
+              beq     loop
+loop2:        ldaa    Port_U                ;This is part 3
+              anda    #$0F
+              cmpa    #$0F
+              bne     loop2
+
+              ldx     #lookup_table2        ;This is part 4
+              ldab    #0
+loop3:        cmpb    #16
+              beq     not_equal
+              ldaa    1, x+
+              cmpa    port_u_holder
+              beq     equal
+              incb
+              bra     loop3
+equal:        stab    accumulator_b
+              ldaa    accumulator_b
+              bra     done
+not_equal:    ldaa    #0
+done:         rts
+
+delay2:       ldy     #10000
+d2:           dey
+              bne     d2
+              bra     start2
